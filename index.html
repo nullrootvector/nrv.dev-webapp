@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nullrootvector.dev</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            color: #E0E0E0;
+            margin: 0;
+            overflow: hidden;
+            background-color: #0a0a0a;
+        }
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+        .terminal-window {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            background-color: rgba(10, 10, 10, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            animation: float-animation 6s ease-in-out infinite;
+        }
+        /* Hide scrollbar */
+        #terminal-body {
+            scrollbar-width: none; /* Firefox */
+        }
+        #terminal-body::-webkit-scrollbar {
+            display: none; /* Safari and Chrome */
+        }
+        .terminal-header {
+            background-color: rgba(45, 45, 45, 0.8);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: move;
+        }
+        #terminal-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #E0E0E0;
+            flex-grow: 1;
+            caret-color: #22c55e;
+        }
+        @keyframes blink-animation {
+            to {
+                visibility: hidden;
+            }
+        }
+        @keyframes float-animation {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+    </style>
+</head>
+<body class="bg-black">
+
+    <canvas id="bg-canvas"></canvas>
+
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="terminal-window w-full max-w-4xl h-[32rem] rounded-lg shadow-2xl flex flex-col">
+            <!-- Terminal Header -->
+            <div class="terminal-header h-8 flex items-center px-3 flex-shrink-0">
+                <div class="flex space-x-2">
+                    <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <div class="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                </div>
+                <div class="flex-grow text-center text-sm text-gray-400">
+                    root@nullrootvector:~
+                </div>
+            </div>
+
+            <!-- Terminal Body -->
+            <div id="terminal-body" class="p-4 md:p-6 text-sm md:text-base flex-grow overflow-y-auto" onclick="document.getElementById('terminal-input').focus()">
+                <div id="output"></div>
+                <div id="input-line" class="flex items-center mt-4">
+                    <p id="prompt" class="text-green-400 flex-shrink-0">root@nullrootvector:~$</p>
+                    <input type="text" id="terminal-input" class="ml-2" autofocus />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Three.js Starfield Background ---
+        let scene, camera, renderer, stars;
+
+        function initStars() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.z = 1;
+
+            renderer = new THREE.WebGLRenderer({
+                canvas: document.getElementById('bg-canvas'),
+                antialias: true,
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 1);
+
+            const starGeo = new THREE.BufferGeometry();
+            const starVertices = [];
+            for (let i = 0; i < 15000; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                starVertices.push(x, y, z);
+            }
+            starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            
+            let starMaterial = new THREE.PointsMaterial({ color: 0xaaaaaa, size: 0.7 });
+            stars = new THREE.Points(starGeo, starMaterial);
+            scene.add(stars);
+
+            animateStars();
+        }
+
+        function animateStars() {
+            stars.rotation.y += 0.0001;
+            stars.rotation.x += 0.0001;
+            renderer.render(scene, camera);
+            requestAnimationFrame(animateStars);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+        initStars();
+
+        // --- Terminal Logic ---
+        const input = document.getElementById('terminal-input');
+        const output = document.getElementById('output');
+        const terminalBody = document.getElementById('terminal-body');
+        const promptEl = document.getElementById('prompt');
+        const inputLine = document.getElementById('input-line');
+        
+        let commandState = null; // For multi-step commands
+
+        function updateDynamicInfo() {
+            const uptimeEl = document.getElementById('uptime');
+            if (uptimeEl) uptimeEl.textContent = '42 days, 6 hours, 9 mins';
+            const cpuEl = document.getElementById('cpu');
+            if (cpuEl) cpuEl.textContent = 'AMD Ryzen 9 7950X (32) @ 5.7GHz';
+            const memoryEl = document.getElementById('memory');
+            if(memoryEl) memoryEl.textContent = '1.8GiB / 125.6GiB';
+        }
+        
+        function handleInquiry(userInput) {
+            const step = commandState.step;
+            const prompts = ["Enter your name:", "Enter your email:", "Enter your message/question:"];
+            
+            // Log the user's answer to the previous prompt
+            output.innerHTML += `<div><span class="text-gray-400">${prompts[step-1]}</span> ${userInput}</div>`;
+
+            if (step === 1) {
+                commandState.data.name = userInput;
+                commandState.step++;
+                promptEl.textContent = prompts[commandState.step - 1];
+            } else if (step === 2) {
+                commandState.data.email = userInput;
+                commandState.step++;
+                promptEl.textContent = prompts[commandState.step - 1];
+            } else if (step === 3) {
+                commandState.data.message = userInput;
+                
+                const { name, email, message } = commandState.data;
+                const subject = `Inquiry from ${name}`;
+                const body = `Name: ${name}\nEmail: ${email}\n\nMessage:\n${message}`;
+                const mailtoLink = `mailto:angel@nullrootvector.dev?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                
+                output.innerHTML += `<div class="mt-2">Thank you! Your inquiry has been prepared. Click the link below to send the email:</div>`;
+                output.innerHTML += `<a href="${mailtoLink}" class="text-blue-400 hover:underline" target="_blank">Send Inquiry Email</a>`;
+                
+                resetCommandState();
+            }
+        }
+
+        function resetCommandState() {
+             commandState = null;
+             promptEl.textContent = "root@nullrootvector:~$";
+        }
+
+        const blogPosts = {
+            'gemini-cli': {
+                title: 'Gemini CLI: Building a Golang-Powered AI Tool',
+                date: '2025-10-05',
+                content: `
+                    <div class="space-y-4">
+                        <h2 class="text-xl font-bold text-yellow-300">Project: Gemini CLI</h2>
+                        <p class="text-gray-400">Date: 2025-10-05</p>
+                        <p>This project is a command-line interface built with Golang that interacts with Google's Gemini API. The goal was to create a lightweight, fast, and extensible tool for developers and power-users to leverage generative AI directly from their terminal.</p>
+                        <h3 class="font-bold text-cyan-300">Core Features:</h3>
+                        <ul class="list-disc list-inside pl-4 space-y-1">
+                            <li>Interactive chat mode.</li>
+                            <li>Direct query execution with streaming output.</li>
+                            <li>Configuration via YAML for easy API key management.</li>
+                        </ul>
+                        <p>The choice of Golang was driven by its performance, concurrency model, and suitability for creating self-contained binaries, making distribution and installation trivial across different operating systems.</p>
+                    </div>
+                `
+            }
+        };
+
+
+        const commands = {
+            neofetch: {
+                description: 'Displays system information.',
+                execute: () => {
+                    const imageUrl = 'file_00000000d07c6230a2af964d8ab36f71~3.jpg';
+                    const profileImage = `<img src="${imageUrl}" alt="Profile Picture" class="w-32 h-32 md:w-40 md:h-40 rounded-lg object-cover" onerror="this.onerror=null;this.src='https://placehold.co/160/1a1a1a/e0e0e0?text=nullroot'">`;
+                    const sysInfo = `
+                        <div>
+                            <p><span class="text-indigo-400 font-bold">root</span>@<span class="text-gray-300">nullrootvector</span></p>
+                            <p class="text-gray-300">-------------------</p>
+                            <p><span class="text-indigo-400 font-bold">OS</span>:     <span class="text-gray-300">Arch Linux x86_64</span></p>
+                            <p><span class="text-indigo-400 font-bold">Host</span>:   <span class="text-gray-300">Monolith-01</span></p>
+                            <p><span class="text-indigo-400 font-bold">Kernel</span>: <span class="text-gray-300">6.9.4-arch1-1</span></p>
+                            <p><span class="text-indigo-400 font-bold">Uptime</span>: <span class="text-gray-300" id="uptime">calculating...</span></p>
+                            <p><span class="text-indigo-400 font-bold">Shell</span>:  <span class="text-gray-300">nrv-sh v1.0</span></p>
+                            <p><span class="text-indigo-400 font-bold">CPU</span>:    <span class="text-gray-300" id="cpu">fetching...</span></p>
+                            <p><span class="text-indigo-400 font-bold">Memory</span>: <span class="text-gray-300" id="memory">fetching...</span></p>
+                        </div>`;
+                    setTimeout(updateDynamicInfo, 100);
+                    return `<div class="flex flex-col md:flex-row gap-4 md:gap-8 items-center">${profileImage}${sysInfo}</div>`;
+                }
+            },
+            whoami: {
+                description: 'Displays a short biography.',
+                execute: () => `
+                    <div class="mt-2">
+                        <h1 class="text-2xl font-bold text-amber-400">Angel</h1>
+                        <p class="mt-1 text-pink-400">Systems & Computer Architecture Engineer</p>
+                        <p class="mt-4 text-gray-300">
+                            Greetings. I am a Texas-based engineer focused on designing and building robust, scalable systems. My journey, rooted in cybersecurity, instilled a deep appreciation for secure and resilient architecture. Today, I channel that expertise into creating elegant web applications and powerful backend services, primarily with Golang. When not architecting systems, I enjoy spending time with my Labrador, Artemis, and playing the piano.
+                        </p>
+                    </div>`
+            },
+            contact: {
+                description: 'Shows contact information.',
+                execute: () => `
+                    <ul class="list-none space-y-1">
+                        <li><span class="text-teal-400 w-20 inline-block">Email:</span> <a href="mailto:angel@nullrootvector.dev" class="text-blue-400 hover:underline">angel@nullrootvector.dev</a></li>
+                        <li><span class="text-teal-400 w-20 inline-block">GitHub:</span> <a href="https://github.com/nullrootvector" target="_blank" class="text-blue-400 hover:underline">nullrootvector</a></li>
+                        <li><span class="text-teal-400 w-20 inline-block">Twitter/X:</span> <a href="https://x.com/nullrootvector" target="_blank" class="text-blue-400 hover:underline">@nullrootvector</a></li>
+                        <li><span class="text-teal-400 w-20 inline-block">Phone:</span> <span class="text-gray-300">+1 (321) 234-6071</span></li>
+                    </ul>`
+            },
+            projects: {
+                description: 'Lists current projects.',
+                execute: () => `
+                    <ul class="list-none">
+                        <li><a href="https://github.com/nullrootvector" target="_blank" class="text-yellow-400 hover:underline">drwxr-xr-x  github/nullrootvector</a></li>
+                    </ul>`
+            },
+            blog: {
+                description: 'Read project write-ups. Usage: blog [read, ls]',
+                execute: (args) => {
+                    const action = args[0];
+                    const slug = args[1];
+
+                    if (action === 'read' && slug && blogPosts[slug]) {
+                        return blogPosts[slug].content;
+                    } 
+                    
+                    if (action === 'ls' || !action) {
+                         let postList = '<p>Available posts:</p><ul class="list-none mt-1">';
+                         for (const key in blogPosts) {
+                             postList += `<li><span class="text-gray-400">${blogPosts[key].date}</span> - <span class="text-amber-400 cursor-pointer hover:underline" onclick="document.getElementById('terminal-input').value='blog read ${key}'; document.getElementById('terminal-input').dispatchEvent(new KeyboardEvent('keydown', {'key': 'Enter'}))">${blogPosts[key].title}</span></li>`;
+                         }
+                         postList += '</ul>';
+                         return postList;
+                    }
+
+                    return `<p>Usage: blog &lt;ls | read [slug]&gt;</p><p>Post not found: ${slug}</p>`;
+                }
+            },
+            inquire: {
+                description: 'Start a project inquiry or ask a question.',
+                execute: () => {
+                    commandState = { command: 'inquire', step: 1, data: {} };
+                    promptEl.textContent = "Enter your name:";
+                    return 'Starting inquiry process... (type "cancel" to exit at any time)';
+                }
+            },
+            date: {
+                description: 'Displays the current date and time.',
+                execute: () => `<p>${new Date().toString()}</p>`
+            },
+            clear: {
+                description: 'Clears the terminal screen.',
+                execute: () => { output.innerHTML = ''; return ''; }
+            },
+            help: {
+                description: 'Lists all available commands.',
+                execute: () => `
+                    <p class="mb-2">Available commands:</p>
+                    <ul class="list-none space-y-1">
+                        ${Object.keys(commands).map(cmd => `<li><span class="text-cyan-400 w-24 inline-block">${cmd}</span> <span class="text-gray-400">- ${commands[cmd].description}</span></li>`).join('')}
+                    </ul>`
+            },
+            echo: {
+                description: 'Prints the given text.',
+                execute: (args) => `<p>${args.join(' ')}</p>`
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const userInput = input.value.trim();
+                
+                if (commandState) {
+                    if (userInput.toLowerCase() === 'cancel') {
+                        output.innerHTML += `<div><span class="text-gray-400">${promptEl.textContent}</span> ${userInput}</div>`;
+                        output.innerHTML += `<div>Inquiry canceled.</div>`;
+                        resetCommandState();
+                    } else {
+                         handleInquiry(userInput);
+                    }
+                } else {
+                    const [command, ...args] = userInput.split(' ').filter(c => c);
+                    output.innerHTML += `
+                        <div class="flex items-center">
+                            <p class="text-green-400">root@nullrootvector:~$</p>
+                            <p class="ml-2">${userInput}</p>
+                        </div>`;
+
+                    if (commands[command]) {
+                        const result = commands[command].execute(args);
+                        if(result) output.innerHTML += `<div class="pl-2">${result}</div>`;
+                    } else if (command) {
+                        output.innerHTML += `<p class="pl-2">Command not found: ${command}. Type 'help' for a list of commands.</p>`;
+                    }
+                }
+                
+                input.value = '';
+                terminalBody.scrollTop = terminalBody.scrollHeight;
+            }
+        });
+
+        function initialBoot() {
+            output.innerHTML += commands.neofetch.execute();
+            output.innerHTML += `<p class="mt-4">Welcome to nullrootvector.dev. Type 'help' to see available commands.</p>`;
+            terminalBody.scrollTop = terminalBody.scrollHeight;
+        }
+
+        initialBoot();
+
+    </script>
+</body>
+</html>
+

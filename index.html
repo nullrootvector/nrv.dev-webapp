@@ -148,14 +148,15 @@
         const inputLine = document.getElementById('input-line');
         
         let commandState = null; // For multi-step commands
+        let blogPosts = {};
 
-        function updateDynamicInfo() {
-            const uptimeEl = document.getElementById('uptime');
-            if (uptimeEl) uptimeEl.textContent = '42 days, 6 hours, 9 mins';
-            const cpuEl = document.getElementById('cpu');
-            if (cpuEl) cpuEl.textContent = 'AMD Ryzen 9 7950X (32) @ 5.7GHz';
-            const memoryEl = document.getElementById('memory');
-            if(memoryEl) memoryEl.textContent = '1.8GiB / 125.6GiB';
+        async function fetchBlogPosts() {
+            try {
+                const response = await fetch('/api/posts');
+                blogPosts = await response.json();
+            } catch (error) {
+                console.error('Error fetching blog posts:', error);
+            }
         }
         
         function handleInquiry(userInput) {
@@ -190,51 +191,54 @@
 
         function resetCommandState() {
              commandState = null;
-             promptEl.textContent = "root@nullrootvector:~$";
+             promptEl.textContent = "root@nullrootvector:~$ի";
         }
 
-        const blogPosts = {
-            'gemini-cli': {
-                title: 'Gemini CLI: Building a Golang-Powered AI Tool',
-                date: '2025-10-05',
-                content: `
-                    <div class="space-y-4">
-                        <h2 class="text-xl font-bold text-yellow-300">Project: Gemini CLI</h2>
-                        <p class="text-gray-400">Date: 2025-10-05</p>
-                        <p>This project is a command-line interface built with Golang that interacts with Google's Gemini API. The goal was to create a lightweight, fast, and extensible tool for developers and power-users to leverage generative AI directly from their terminal.</p>
-                        <h3 class="font-bold text-cyan-300">Core Features:</h3>
-                        <ul class="list-disc list-inside pl-4 space-y-1">
-                            <li>Interactive chat mode.</li>
-                            <li>Direct query execution with streaming output.</li>
-                            <li>Configuration via YAML for easy API key management.</li>
-                        </ul>
-                        <p>The choice of Golang was driven by its performance, concurrency model, and suitability for creating self-contained binaries, making distribution and installation trivial across different operating systems.</p>
-                    </div>
-                `
-            }
-        };
-
-
         const commands = {
-            neofetch: {
+            fetch: {
                 description: 'Displays system information.',
-                execute: () => {
-                    const imageUrl = 'file_00000000d07c6230a2af964d8ab36f71~3.jpg';
+                execute: async () => {
+                    const imageUrl = 'pfp.jpeg';
                     const profileImage = `<img src="${imageUrl}" alt="Profile Picture" class="w-32 h-32 md:w-40 md:h-40 rounded-lg object-cover" onerror="this.onerror=null;this.src='https://placehold.co/160/1a1a1a/e0e0e0?text=nullroot'">`;
+                    
+                    const response = await fetch('/api/sysinfo');
+                    const data = await response.json();
+
                     const sysInfo = `
                         <div>
                             <p><span class="text-indigo-400 font-bold">root</span>@<span class="text-gray-300">nullrootvector</span></p>
                             <p class="text-gray-300">-------------------</p>
-                            <p><span class="text-indigo-400 font-bold">OS</span>:     <span class="text-gray-300">Arch Linux x86_64</span></p>
-                            <p><span class="text-indigo-400 font-bold">Host</span>:   <span class="text-gray-300">Monolith-01</span></p>
-                            <p><span class="text-indigo-400 font-bold">Kernel</span>: <span class="text-gray-300">6.9.4-arch1-1</span></p>
-                            <p><span class="text-indigo-400 font-bold">Uptime</span>: <span class="text-gray-300" id="uptime">calculating...</span></p>
-                            <p><span class="text-indigo-400 font-bold">Shell</span>:  <span class="text-gray-300">nrv-sh v1.0</span></p>
-                            <p><span class="text-indigo-400 font-bold">CPU</span>:    <span class="text-gray-300" id="cpu">fetching...</span></p>
-                            <p><span class="text-indigo-400 font-bold">Memory</span>: <span class="text-gray-300" id="memory">fetching...</span></p>
+                            <p><span class="text-indigo-400 font-bold">OS</span>:     <span class="text-gray-300">${data.os} ${data.arch}</span></p>
+                            <p><span class="text-indigo-400 font-bold">Host</span>:   <span class="text-gray-300">Leviathan-one</span></p>
+                            <p><span class="text-indigo-400 font-bold">Kernel</span>: <span class="text-gray-300">${data.kernelVersion}</span></p>
+                            <p><span class="text-indigo-400 font-bold">Shell</span>:  <span class="text-gray-300">nrv-shell v4.2</span></p>
+                            <p><span class="text-indigo-400 font-bold">CPU</span>:    <span class="text-gray-300">${data.cpuName} (${data.numCpu} cores)</span></p>
+                            <p><span class="text-indigo-400 font-bold">Usage</span>:  <span class="text-gray-300">${data.loadAvg}</span></p>
+                            <p><span class="text-indigo-400 font-bold">Memory</span>: <span class="text-gray-300">${data.memUsed} / ${data.memTotal}</span></p>
                         </div>`;
-                    setTimeout(updateDynamicInfo, 100);
+
                     return `<div class="flex flex-col md:flex-row gap-4 md:gap-8 items-center">${profileImage}${sysInfo}</div>`;
+                }
+            },
+            stats: {
+                description: 'Displays website statistics.',
+                execute: async () => {
+                    const response = await fetch('/api/stats');
+                    const data = await response.json();
+                    let projectCount = 0;
+                    try {
+                        const projectsResponse = await fetch('/api/projects');
+                        const projects = await projectsResponse.json();
+                        projectCount = projects.length;
+                    } catch (e) {}
+                    let postCount = 0;
+                    try {
+                        const postsResponse = await fetch('/api/posts');
+                        const posts = await postsResponse.json();
+                        postCount = Object.keys(posts).length;
+                    } catch (e) {}
+
+                    return `<p>Unique visitors: ${data.visitors}</p><p>Projects: ${projectCount}</p><p>Blog posts: ${postCount}</p>`;
                 }
             },
             whoami: {
@@ -260,10 +264,16 @@
             },
             projects: {
                 description: 'Lists current projects.',
-                execute: () => `
-                    <ul class="list-none">
-                        <li><a href="https://github.com/nullrootvector" target="_blank" class="text-yellow-400 hover:underline">drwxr-xr-x  github/nullrootvector</a></li>
-                    </ul>`
+                execute: async () => {
+                    const response = await fetch('/api/projects');
+                    const projects = await response.json();
+                    let projectList = '<ul class="list-none">';
+                    for (const p of projects) {
+                        projectList += `<li><a href="${p.url}" target="_blank" class="text-yellow-400 hover:underline">drwxr-xr-x  ${p.name}</a></li>`;
+                    }
+                    projectList += '</ul>';
+                    return projectList;
+                }
             },
             blog: {
                 description: 'Read project write-ups. Usage: blog [read, ls]',
@@ -286,6 +296,14 @@
 
                     return `<p>Usage: blog &lt;ls | read [slug]&gt;</p><p>Post not found: ${slug}</p>`;
                 }
+            },
+            login: {
+                description: 'Login to the system.',
+                execute: () => '<p>Login command is under construction.</p>'
+            },
+            chat: {
+                description: 'Chat with an AI assistant.',
+                execute: () => '<p>Chat command is under construction.</p>'
             },
             inquire: {
                 description: 'Start a project inquiry or ask a question.',
@@ -317,7 +335,7 @@
             }
         };
 
-        input.addEventListener('keydown', (e) => {
+        input.addEventListener('keydown', async (e) => {
             if (e.key === 'Enter') {
                 const userInput = input.value.trim();
                 
@@ -333,12 +351,12 @@
                     const [command, ...args] = userInput.split(' ').filter(c => c);
                     output.innerHTML += `
                         <div class="flex items-center">
-                            <p class="text-green-400">root@nullrootvector:~$</p>
+                            <p class="text-green-400">root@nullrootvector:~$
                             <p class="ml-2">${userInput}</p>
                         </div>`;
 
                     if (commands[command]) {
-                        const result = commands[command].execute(args);
+                        const result = await commands[command].execute(args);
                         if(result) output.innerHTML += `<div class="pl-2">${result}</div>`;
                     } else if (command) {
                         output.innerHTML += `<p class="pl-2">Command not found: ${command}. Type 'help' for a list of commands.</p>`;
@@ -350,8 +368,9 @@
             }
         });
 
-        function initialBoot() {
-            output.innerHTML += commands.neofetch.execute();
+        async function initialBoot() {
+            await fetchBlogPosts();
+            output.innerHTML += await commands.fetch.execute();
             output.innerHTML += `<p class="mt-4">Welcome to nullrootvector.dev. Type 'help' to see available commands.</p>`;
             terminalBody.scrollTop = terminalBody.scrollHeight;
         }
@@ -361,4 +380,3 @@
     </script>
 </body>
 </html>
-

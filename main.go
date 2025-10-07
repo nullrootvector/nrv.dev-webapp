@@ -3,10 +3,11 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -43,7 +44,7 @@ type SysInfo struct {
 }
 
 func getKernelVersion() string {
-	data, err := ioutil.ReadFile("/proc/version")
+	data, err := os.ReadFile("/proc/version")
 	if err != nil {
 		return "N/A"
 	}
@@ -51,7 +52,7 @@ func getKernelVersion() string {
 }
 
 func getCPUInfo() (string, int) {
-	data, err := ioutil.ReadFile("/proc/cpuinfo")
+	data, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		return "N/A", runtime.NumCPU()
 	}
@@ -65,7 +66,7 @@ func getCPUInfo() (string, int) {
 }
 
 func getMemInfo() (string, string) {
-	data, err := ioutil.ReadFile("/proc/meminfo")
+	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		return "N/A", "N/A"
 	}
@@ -95,7 +96,7 @@ func getMemInfo() (string, string) {
 }
 
 func getLoadAvg() string {
-	data, err := ioutil.ReadFile("/proc/loadavg")
+	data, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
 		return "N/A"
 	}
@@ -169,6 +170,9 @@ func visitorMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	port := flag.String("port", "8443", "port to listen on")
+	flag.Parse()
+
 	initDB()
 	defer db.Close()
 
@@ -241,8 +245,8 @@ func main() {
 		json.NewEncoder(w).Encode(projects)
 	})
 
-	log.Println("Starting server on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Printf("Starting server on https://localhost:%s", *port)
+	if err := http.ListenAndServeTLS(":"+*port, "cert.pem", "key.pem", nil); err != nil {
 		log.Fatal(err)
 	}
 }

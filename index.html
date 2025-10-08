@@ -149,6 +149,20 @@
         
         let commandState = null; // For multi-step commands
         let blogPosts = {};
+        let isAuthenticated = false;
+
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/check-auth');
+                if (response.ok) {
+                    isAuthenticated = true;
+                } else {
+                    isAuthenticated = false;
+                }
+            } catch (error) {
+                isAuthenticated = false;
+            }
+        }
 
         async function fetchBlogPosts() {
             try {
@@ -177,21 +191,109 @@
             } else if (step === 3) {
                 commandState.data.message = userInput;
                 
-                const { name, email, message } = commandState.data;
-                const subject = `Inquiry from ${name}`;
-                const body = `Name: ${name}\nEmail: ${email}\n\nMessage:\n${message}`;
-                const mailtoLink = `mailto:angel@nullrootvector.dev?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                
-                output.innerHTML += `<div class="mt-2">Thank you! Your inquiry has been prepared. Click the link below to send the email:</div>`;
-                output.innerHTML += `<a href="${mailtoLink}" class="text-blue-400 hover:underline" target="_blank">Send Inquiry Email</a>`;
-                
-                resetCommandState();
+                fetch("/api/inquire", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(commandState.data),
+                }).then(response => {
+                    if (response.ok) {
+                        output.innerHTML += `<div class="mt-2">Thank you for your inquiry!</div>`;
+                    } else {
+                        output.innerHTML += `<div class="mt-2">There was an error submitting your inquiry.</div>`;
+                    }
+                    resetCommandState();
+                });
             }
+        }
+
+        function handleLogin(userInput) {
+            const step = commandState.step;
+            const prompts = ["Enter your username:", "Enter your password:"];
+
+            output.innerHTML += `<div><span class="text-gray-400">${prompts[step-1]}</span> ${userInput}</div>`;
+
+            if (step === 1) {
+                commandState.data.username = userInput;
+                commandState.step++;
+                promptEl.textContent = prompts[commandState.step - 1];
+            } else if (step === 2) {
+                commandState.data.password = userInput;
+                
+                fetch("/api/signin", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(commandState.data),
+                }).then(response => {
+                    if (response.ok) {
+                        output.innerHTML += `<div class="mt-2">Login successful!</div>`;
+                        isAuthenticated = true;
+                    } else {
+                        output.innerHTML += `<div class="mt-2">Login failed.</div>`;
+                    }
+                    resetCommandState();
+                });
+            }
+        }
+
+        function handleSignup(userInput) {
+            const step = commandState.step;
+            const prompts = ["Enter your username:", "Enter your password:", "Enter your invitation code:"];
+
+            output.innerHTML += `<div><span class="text-gray-400">${prompts[step-1]}</span> ${userInput}</div>`;
+
+            if (step === 1) {
+                commandState.data.username = userInput;
+                commandState.step++;
+                promptEl.textContent = prompts[commandState.step - 1];
+            } else if (step === 2) {
+                commandState.data.password = userInput;
+                commandState.step++;
+                promptEl.textContent = prompts[commandState.step - 1];
+            } else if (step === 3) {
+                commandState.data.invitationCode = userInput;
+                
+                fetch("/api/signup", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(commandState.data),
+                }).then(response => {
+                    if (response.ok) {
+                        output.innerHTML += `<div class="mt-2">Signup successful! You can now log in.</div>`;
+                    } else {
+                        output.innerHTML += `<div class="mt-2">Signup failed.</div>`;
+                    }
+                    resetCommandState();
+                });
+            }
+        }
+
+        async function handleChat(userInput) {
+            output.innerHTML += `<div><span class="text-gray-400">chat> </span> ${userInput}</div>`;
+
+            const evtSource = new EventSource("/api/chat?prompt=" + userInput);
+            let chatOutput = document.createElement('div');
+            chatOutput.classList.add('pl-2');
+            output.appendChild(chatOutput);
+
+            evtSource.onmessage = function(event) {
+                chatOutput.innerHTML += event.data;
+                terminalBody.scrollTop = terminalBody.scrollHeight;
+            };
+
+            evtSource.onerror = function(err) {
+                evtSource.close();
+            };
         }
 
         function resetCommandState() {
              commandState = null;
-             promptEl.textContent = "root@nullrootvector:~$ի";
+             promptEl.textContent = "root@nullrootvector:~$ ";
         }
 
         const commands = {
@@ -209,7 +311,7 @@
                             <p><span class="text-indigo-400 font-bold">root</span>@<span class="text-gray-300">nullrootvector</span></p>
                             <p class="text-gray-300">-------------------</p>
                             <p><span class="text-indigo-400 font-bold">OS</span>:     <span class="text-gray-300">${data.os} ${data.arch}</span></p>
-                            <p><span class="text-indigo-400 font-bold">Host</span>:   <span class="text-gray-300">Leviathan-one</span></p>
+                            <p><span class="text-indigo-400 font-bold">Host</span>:   <span class="text-gray-300">Leviathan 7</span></p>
                             <p><span class="text-indigo-400 font-bold">Kernel</span>: <span class="text-gray-300">${data.kernelVersion}</span></p>
                             <p><span class="text-indigo-400 font-bold">Shell</span>:  <span class="text-gray-300">nrv-shell v4.2</span></p>
                             <p><span class="text-indigo-400 font-bold">CPU</span>:    <span class="text-gray-300">${data.cpuName} (${data.numCpu} cores)</span></p>
@@ -298,12 +400,31 @@
                 }
             },
             login: {
-                description: 'Login to the system.',
-                execute: () => '<p>Login command is under construction.</p>'
+                description: 'Login to the system. Usage: login',
+                execute: () => {
+                    commandState = { command: 'login', step: 1, data: {} };
+                    promptEl.textContent = "Enter your username:";
+                    return 'Starting login process... (type "cancel" to exit at any time)';
+                }
+            },
+            signup: {
+                description: 'Sign up for a new account. Usage: signup',
+                execute: () => {
+                    commandState = { command: 'signup', step: 1, data: {} };
+                    promptEl.textContent = "Enter your username:";
+                    return 'Starting signup process... (type "cancel" to exit at any time)';
+                }
             },
             chat: {
-                description: 'Chat with an AI assistant.',
-                execute: () => '<p>Chat command is under construction.</p>'
+                description: 'Chat with an AI assistant. Usage: chat',
+                execute: () => {
+                    if (!isAuthenticated) {
+                        return '<p>You must be logged in to use the chat command.</p>';
+                    }
+                    commandState = { command: 'chat', step: 1, data: {} };
+                    promptEl.textContent = "chat> ";
+                    return 'Entering chat mode... (type "exit" to quit)';
+                }
             },
             inquire: {
                 description: 'Start a project inquiry or ask a question.',
@@ -323,11 +444,17 @@
             },
             help: {
                 description: 'Lists all available commands.',
-                execute: () => `
-                    <p class="mb-2">Available commands:</p>
-                    <ul class="list-none space-y-1">
-                        ${Object.keys(commands).map(cmd => `<li><span class="text-cyan-400 w-24 inline-block">${cmd}</span> <span class="text-gray-400">- ${commands[cmd].description}</span></li>`).join('')}
-                    </ul>`
+                execute: () => {
+                    let availableCommands = { ...commands };
+                    if (!isAuthenticated) {
+                        delete availableCommands.chat;
+                    }
+                    return `
+                        <p class="mb-2">Available commands:</p>
+                        <ul class="list-none space-y-1">
+                            ${Object.keys(availableCommands).map(cmd => `<li><span class="text-cyan-400 w-24 inline-block">${cmd}</span> <span class="text-gray-400">- ${availableCommands[cmd].description}</span></li>`).join('')}
+                        </ul>`;
+                }
             },
             echo: {
                 description: 'Prints the given text.',
@@ -342,10 +469,20 @@
                 if (commandState) {
                     if (userInput.toLowerCase() === 'cancel') {
                         output.innerHTML += `<div><span class="text-gray-400">${promptEl.textContent}</span> ${userInput}</div>`;
-                        output.innerHTML += `<div>Inquiry canceled.</div>`;
+                        output.innerHTML += `<div>Process canceled.</div>`;
                         resetCommandState();
-                    } else {
-                         handleInquiry(userInput);
+                    } else if (commandState.command === 'inquire') {
+                        handleInquiry(userInput);
+                    } else if (commandState.command === 'login') {
+                        handleLogin(userInput);
+                    } else if (commandState.command === 'signup') {
+                        handleSignup(userInput);
+                    } else if (commandState.command === 'chat') {
+                        if (userInput.toLowerCase() === 'exit') {
+                            resetCommandState();
+                            return;
+                        }
+                        await handleChat(userInput);
                     }
                 } else {
                     const [command, ...args] = userInput.split(' ').filter(c => c);
@@ -369,6 +506,7 @@
         });
 
         async function initialBoot() {
+            await checkAuth();
             await fetchBlogPosts();
             output.innerHTML += await commands.fetch.execute();
             output.innerHTML += `<p class="mt-4">Welcome to nullrootvector.dev. Type 'help' to see available commands.</p>`;

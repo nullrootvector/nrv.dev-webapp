@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"flag"
@@ -13,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3" // go get github.com/mattn/go-sqlite3
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var db *sql.DB
@@ -32,6 +33,12 @@ type Project struct {
 	URL         string `json:"url"`
 }
 
+type Inquiry struct {
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Message string `json:"message"`
+}
+
 type SysInfo struct {
 	OS            string `json:"os"`
 	Arch          string `json:"arch"`
@@ -41,6 +48,17 @@ type SysInfo struct {
 	MemTotal      string `json:"memTotal"`
 	MemUsed       string `json:"memUsed"`
 	LoadAvg       string `json:"loadAvg"`
+}
+
+type OllamaRequest struct {
+	Model    string `json:"model"`
+	Prompt   string `json:"prompt"`
+	Stream   bool   `json:"stream"`
+}
+
+type OllamaResponse struct {
+	Response string `json:"response"`
+	Done     bool   `json:"done"`
 }
 
 func getKernelVersion() string {
@@ -103,6 +121,76 @@ func getLoadAvg() string {
 	return strings.Fields(string(data))[0]
 }
 
+func inquire(w http.ResponseWriter, r *http.Request) {
+	var i Inquiry
+	err := json.NewDecoder(r.Body).Decode(&i)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	stmt, err := db.Prepare("INSERT INTO inquiries (name, email, message, ip_address, timestamp) VALUES (?, ?, ?, ?, ?)")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(i.Name, i.Email, i.Message, r.RemoteAddr, time.Now())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func chat(w http.ResponseWriter, r *http.Request) {
+	prompt := r.URL.Query().Get("prompt")
+	if prompt == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// Create a new request to the Ollama API
+	client := &http.Client{}
+	llmReq, err := http.NewRequest("POST", "http://localhost:11434/api/generate", strings.NewReader(fmt.Sprintf(`{"model": "chat", "prompt": "%s", "stream": true}`, prompt)))
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Set the headers
+	llmReq.Header.Set("Content-Type", "application/json")
+
+	// Send the request
+	resp, err := client.Do(llmReq)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Stream the response back to the client
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		var ollamaResp OllamaResponse
+		err := json.Unmarshal(scanner.Bytes(), &ollamaResp)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(w, "data: %s\n\n", ollamaResp.Response)
+		flusher, ok := w.(http.Flusher)
+		if ok {
+			flusher.Flush()
+		}
+	}
+}
+
 func initDB() {
 	var err error
 	db, err = sql.Open("sqlite3", "./nrv.dev.db")
@@ -115,6 +203,8 @@ func initDB() {
 	CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY, slug TEXT, title TEXT, content TEXT, date TEXT);
 	CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, name TEXT, description TEXT, url TEXT);
 	CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password_hash TEXT);
+	CREATE TABLE IF NOT EXISTS invitation_codes (id INTEGER PRIMARY KEY, code TEXT UNIQUE, used BOOLEAN);
+	CREATE TABLE IF NOT EXISTS inquiries (id INTEGER PRIMARY KEY, name TEXT, email TEXT, message TEXT, ip_address TEXT, timestamp DATETIME);
 	`
 	_, err = db.Exec(createTables)
 	if err != nil {
@@ -132,20 +222,7 @@ func migrateContent() {
 	if count == 0 {
 		log.Println("Migrating blog posts...")
 		stmt, _ := db.Prepare("INSERT INTO posts (slug, title, content, date) VALUES (?, ?, ?, ?)")
-		stmt.Exec("gemini-cli", "Gemini CLI: Building a Golang-Powered AI Tool", `
-                    <div class="space-y-4">
-                        <h2 class="text-xl font-bold text-yellow-300">Project: Gemini CLI</h2>
-                        <p class="text-gray-400">Date: 2025-10-05</p>
-                        <p>This project is a command-line interface built with Golang that interacts with Google's Gemini API. The goal was to create a lightweight, fast, and extensible tool for developers and power-users to leverage generative AI directly from their terminal.</p>
-                        <h3 class="font-bold text-cyan-300">Core Features:</h3>
-                        <ul class="list-disc list-inside pl-4 space-y-1">
-                            <li>Interactive chat mode.</li>
-                            <li>Direct query execution with streaming output.</li>
-                            <li>Configuration via YAML for easy API key management.</li>
-                        </ul>
-                        <p>The choice of Golang was driven by its performance, concurrency model, and suitability for creating self-contained binaries, making distribution and installation trivial across different operating systems.</p>
-                    </div>
-                `, "2025-10-05")
+		stmt.Exec("gemini-cli", "Gemini CLI: Building a Golang-Powered AI Tool", "<div class=\"space-y-4\"><h2 class=\"text-xl font-bold text-yellow-300\">Project: Gemini CLI</h2><p class=\"text-gray-400\">Date: 2025-10-05</p><p>This project is a command-line interface built with Golang that interacts with Google's Gemini API. The goal was to create a lightweight, fast, and extensible tool for developers and power-users to leverage generative AI directly from their terminal.</p><h3 class=\"font-bold text-cyan-300\">Core Features:</h3><ul class=\"list-disc list-inside pl-4 space-y-1\"><li>Interactive chat mode.</li><li>Direct query execution with streaming output.</li><li>Configuration via YAML for easy API key management.</li></ul><p>The choice of Golang was driven by its performance, concurrency model, and suitability for creating self-contained binaries, making distribution and installation trivial across different operating systems.</p></div>", "2025-10-05")
 		stmt.Close()
 	}
 
@@ -176,6 +253,8 @@ func main() {
 	initDB()
 	defer db.Close()
 
+	go runCLI()
+
 	fs := http.FileServer(http.Dir("."))
 	http.Handle("/", visitorMiddleware(fs))
 
@@ -201,6 +280,14 @@ func main() {
 		db.QueryRow("SELECT COUNT(*) FROM visitors").Scan(&count)
 		json.NewEncoder(w).Encode(map[string]int{"visitors": count})
 	})
+
+	http.HandleFunc("/api/signup", signup)
+	http.HandleFunc("/api/signin", signin)
+	http.HandleFunc("/api/logout", logout)
+	http.HandleFunc("/api/check-auth", checkAuth)
+	http.HandleFunc("/api/generate-invite-code", generateInviteCode)
+	http.HandleFunc("/api/inquire", inquire)
+	http.HandleFunc("/api/chat", chat)
 
 	http.HandleFunc("/api/posts", func(w http.ResponseWriter, r *http.Request) {
 		rows, err := db.Query("SELECT id, slug, title, content, date FROM posts")

@@ -51,9 +51,9 @@ type SysInfo struct {
 }
 
 type OllamaRequest struct {
-	Model    string `json:"model"`
-	Prompt   string `json:"prompt"`
-	Stream   bool   `json:"stream"`
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	Stream bool   `json:"stream"`
 }
 
 type OllamaResponse struct {
@@ -222,7 +222,7 @@ func migrateContent() {
 	if count == 0 {
 		log.Println("Migrating blog posts...")
 		stmt, _ := db.Prepare("INSERT INTO posts (slug, title, content, date) VALUES (?, ?, ?, ?)")
-		stmt.Exec("gemini-cli", "Gemini CLI: Building a Golang-Powered AI Tool", "<div class=\"space-y-4\"><h2 class=\"text-xl font-bold text-yellow-300\">Project: Gemini CLI</h2><p class=\"text-gray-400\">Date: 2025-10-05</p><p>This project is a command-line interface built with Golang that interacts with Google's Gemini API. The goal was to create a lightweight, fast, and extensible tool for developers and power-users to leverage generative AI directly from their terminal.</p><h3 class=\"font-bold text-cyan-300\">Core Features:</h3><ul class=\"list-disc list-inside pl-4 space-y-1\"><li>Interactive chat mode.</li><li>Direct query execution with streaming output.</li><li>Configuration via YAML for easy API key management.</li></ul><p>The choice of Golang was driven by its performance, concurrency model, and suitability for creating self-contained binaries, making distribution and installation trivial across different operating systems.</p></div>", "2025-10-05")
+		stmt.Exec("quantitative-system-dynamics", "Quantitative System Dynamics: Building a Software Development Firm", "<div class=\"space-y-4\"><h2 class=\"text-xl font-bold text-yellow-300\">Project: Quantitative System Dynamics</h2><p class=\"text-gray-400\">Date: 2025-10-05</p><p>Building bespoke software for enterprise clients and developing internal and public tools to work with dynamical systems.</p><h3 class=\"font-bold text-cyan-300\">Core Features:</h3><ul class=\"list-disc list-inside pl-4 space-y-1\"><li>A client first approach.</li><li>Architecting solutions to modern problems.</li><li>Quantitative data analysis and development of dynamical systems.</li></ul><p>This project is an enterprise that requires most of my time, built by a small team of less than 5.</p></div>", "2025-10-05")
 		stmt.Close()
 	}
 
@@ -247,7 +247,7 @@ func visitorMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	port := flag.String("port", "8443", "port to listen on")
+	port := flag.String("port", "443", "port to listen on")
 	flag.Parse()
 
 	initDB()
